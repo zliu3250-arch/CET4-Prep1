@@ -1,4 +1,5 @@
 import {
+  Award,
   BookOpen,
   CheckCircle2,
   Flame,
@@ -50,9 +51,16 @@ const MODULE_CARDS: Array<{
   {
     key: 'listening',
     title: '听力训练',
-    desc: '倍速/回退 5 秒播放、原文对照，支持导入本地 MP3',
+    desc: '近五年真题原声播放、倍速/回退与原文对照',
     icon: Headphones,
     color: 'bg-violet-50 text-violet-600',
+  },
+  {
+    key: 'mock',
+    title: '综合测试（全真套卷）',
+    desc: '历年四级真题完整套卷 · 125 分钟模考 + 710 分制 AI 自动打分',
+    icon: Award,
+    color: 'bg-rose-50 text-rose-600',
   },
 ];
 
@@ -62,6 +70,7 @@ const MODULE_LABELS: Record<PracticeModuleKey, string> = {
   translation: '翻译',
   reading: '阅读',
   listening: '听力',
+  mock: '模考',
 };
 
 export function DashboardPage({ onNavigate }: { onNavigate: (next: ModuleKey) => void }) {

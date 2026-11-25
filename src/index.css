@@ -3,5 +3,25 @@
 @layer base {
   html, body {
     overscroll-behavior-y: none;
+    overflow-x: clip;
+    -webkit-tap-highlight-color: transparent;
   }
+}
+
+/* 防止 iOS Safari 点击输入框时自动放大页面（置于 layer 外确保优先级高于 Tailwind text-sm/text-xs） */
+@media (max-width: 767px) {
+  input[type="text"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+.safe-top {
+  padding-top: calc(0.625rem + env(safe-area-inset-top, 0px));
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

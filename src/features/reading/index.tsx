@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookOpen, ClipboardCheck, FileText, AlertTriangle } from 'lucide-react';
+import { BookOpen, ClipboardCheck, AlertTriangle } from 'lucide-react';
 import {
-  Badge,
   Card,
   EmptyState,
   SectionHeader,
   TimerBar,
 } from '../../components/ui';
-import { appendPracticeLog, getReadingPassages } from '../../services/storage';
+import { QuestionPickerBar, sortByNewestFirst } from '../../components/ui/QuestionPickerBar';
+import { appendPracticeLog, getReadingPassages, getScopedStorageKey } from '../../services/storage';
 import type { ReadingPassage } from '../../types/cet4';
 import { PassageViewer } from './PassageViewer';
 import { QuestionList } from './QuestionList';
@@ -19,6 +19,42 @@ import {
   type MobileTab,
   type ReadingFilterType,
 } from './types';
+
+const READING_DRAFT_KEY = 'cet4_reading_draft_v1';
+
+function readReadingDraft(passageId: string): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(getScopedStorageKey(READING_DRAFT_KEY));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { passageId?: string; answers?: Record<string, string> };
+    return parsed.passageId === passageId && parsed.answers ? parsed.answers : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveReadingDraft(passageId: string, answers: Record<string, string>): void {
+  try {
+    if (Object.keys(answers).length === 0) {
+      window.localStorage.removeItem(getScopedStorageKey(READING_DRAFT_KEY));
+      return;
+    }
+    window.localStorage.setItem(
+      getScopedStorageKey(READING_DRAFT_KEY),
+      JSON.stringify({ passageId, answers }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function clearReadingDraft(): void {
+  try {
+    window.localStorage.removeItem(getScopedStorageKey(READING_DRAFT_KEY));
+  } catch {
+    // ignore
+  }
+}
 
 const FILTER_TABS: Array<{ key: ReadingFilterType; label: string }> = [
   { key: 'all', label: '全部题型' },
@@ -56,9 +92,10 @@ export default function ReadingPage() {
     getReadingPassages()
       .then((list) => {
         if (!active) return;
-        setPassages(list);
-        if (list.length > 0) {
-          setSelectedPassageId(list[0].id);
+        const sorted = sortByNewestFirst(list);
+        setPassages(sorted);
+        if (sorted.length > 0) {
+          setSelectedPassageId(sorted[0].id);
         }
         setLoadError(null);
       })
@@ -113,9 +150,11 @@ export default function ReadingPage() {
     }
   }, [filteredPassages, selectedPassageId]);
 
-  // 重置作答与计时器
-  const resetPassageState = useCallback((passage: ReadingPassage | null) => {
-    setAnswers({});
+  // 重置作答与计时器（首次进入该篇时自动恢复本地暂存答案）
+  const resetPassageState = useCallback((passage: ReadingPassage | null, forceClear = false) => {
+    const restored = !forceClear && passage ? readReadingDraft(passage.id) : {};
+    if (forceClear) clearReadingDraft();
+    setAnswers(restored);
     setSubmitted(false);
     setGradeSummary(null);
     setHighlightedParagraph(null);
@@ -163,15 +202,17 @@ export default function ReadingPage() {
     (questionId: string, label: string) => {
       if (submitted) return;
       setAnswers((prev) => {
+        const next = { ...prev };
         if (!label) {
-          const next = { ...prev };
           delete next[questionId];
-          return next;
+        } else {
+          next[questionId] = label;
         }
-        return { ...prev, [questionId]: label };
+        if (currentPassage) saveReadingDraft(currentPassage.id, next);
+        return next;
       });
     },
-    [submitted],
+    [submitted, currentPassage],
   );
 
   // 点击原文中的选词填空空位：高亮该题，移动端若在看原文则可聚焦并让用户直接点词库
@@ -247,6 +288,7 @@ export default function ReadingPage() {
     setSubmitted(true);
     setTimerRunning(false);
     setGradeSummary(summary);
+    clearReadingDraft();
 
     const typeLabel = READING_TYPE_META[currentPassage.type].label;
     appendPracticeLog({
@@ -304,71 +346,61 @@ export default function ReadingPage() {
         </div>
       )}
 
-      {/* 题型筛选与篇章选择器 */}
-      <Card className="space-y-3 p-3.5 sm:p-4">
-        {/* 题型筛选 Tab */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FILTER_TABS.map((tab) => {
-            const active = filterType === tab.key;
-            const count = typeCounts[tab.key];
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setFilterType(tab.key)}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
-                  active
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
-                    active
-                      ? 'bg-white/20 text-white'
-                      : 'bg-white text-slate-500'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
+      {/* 顶部紧凑选题栏：默认最新真题 + 右侧下拉键展开全部题库（按时间从新到旧） */}
+      {!loading && !loadError && passages.length > 0 && (
+        <QuestionPickerBar
+          label="当前阅读真题"
+          currentTitle={currentPassage?.title ?? '请选择阅读篇章'}
+          currentBadge={currentPassage ? READING_TYPE_META[currentPassage.type].shortLabel : undefined}
+          totalCount={passages.length}
+          filterTabs={FILTER_TABS.map((tab) => ({
+            key: tab.key,
+            label: tab.label,
+            count: typeCounts[tab.key],
+          }))}
+          activeFilter={filterType}
+          onFilterChange={(key) => {
+            const nextKey = key as ReadingFilterType;
+            if (
+              !submitted &&
+              answeredCount > 0 &&
+              nextKey !== 'all' &&
+              currentPassage &&
+              currentPassage.type !== nextKey &&
+              !window.confirm('当前篇章还有未交卷的作答，切换题型将重置当前答案，确认继续吗？')
+            ) {
+              return;
+            }
+            setFilterType(nextKey);
+          }}
+          items={filteredPassages.map((p) => {
+            const meta = READING_TYPE_META[p.type];
+            return {
+              id: p.id,
+              title: p.title,
+              badge: meta.shortLabel,
+              badgeTone: meta.badgeTone,
+              meta: `共 ${p.questions.length} 题 · 建议 ${p.suggestedMinutes} 分钟`,
+            };
           })}
-        </div>
+          activeId={currentPassage?.id ?? ''}
+          onSelect={(id) => {
+            if (id === currentPassage?.id) return;
+            if (
+              !submitted &&
+              answeredCount > 0 &&
+              !window.confirm('当前篇章还有未交卷的作答，换题将清空已选答案，确认切换吗？')
+            ) {
+              return;
+            }
+            clearReadingDraft();
+            setSelectedPassageId(id);
+            setMobileTab('passage');
+          }}
+        />
+      )}
 
-        {/* 篇章切换条 */}
-        {filteredPassages.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-            {filteredPassages.map((p, index) => {
-              const active = currentPassage?.id === p.id;
-              const meta = READING_TYPE_META[p.type];
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setSelectedPassageId(p.id)}
-                  className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left text-xs sm:text-sm transition-colors max-w-full cursor-pointer ${
-                    active
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-800 font-semibold'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  <span className="truncate max-w-[180px] sm:max-w-[260px]">
-                    {index + 1}. {p.title}
-                  </span>
-                  <Badge tone={meta.badgeTone} className="shrink-0">
-                    {meta.shortLabel}
-                  </Badge>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* 加载中 / 错误 / 空状态 */}
+      {/* 加载中 / 错误 / 空状态 / 主做题区（默认展示最新真题，置顶直接开始阅读做题） */}
       {loading ? (
         <Card className="py-12 text-center text-sm text-slate-500">
           正在加载阅读理解题库...
@@ -385,7 +417,7 @@ export default function ReadingPage() {
       ) : (
         <>
           {/* 移动端顶部 sticky Tab：快速切换「看原文 / 做题」 */}
-          <div className="lg:hidden sticky top-[52px] md:top-0 z-10 -mx-1 px-1 py-1.5 bg-slate-50/95 backdrop-blur">
+          <div className="lg:hidden sticky top-[calc(3.25rem+env(safe-area-inset-top,0px))] md:top-0 z-10 -mx-1 px-1 py-1.5 bg-slate-50/95 backdrop-blur">
             <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
               <button
                 type="button"
@@ -459,7 +491,7 @@ export default function ReadingPage() {
                 onSelectAnswer={handleSelectAnswer}
                 onFocusQuestion={setActiveQuestionId}
                 onSubmit={handleSubmit}
-                onReset={() => resetPassageState(currentPassage)}
+                onReset={() => resetPassageState(currentPassage, true)}
                 onLocateParagraph={handleLocateParagraph}
               />
             </div>

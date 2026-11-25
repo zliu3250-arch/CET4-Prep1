@@ -1,18 +1,35 @@
 import { useState, type ChangeEvent } from 'react';
-import { Download, KeyRound, ShieldAlert, Trash2, Upload, Wifi } from 'lucide-react';
-import { Button, Card, SectionHeader } from '../components/ui';
-import { testAIConnection } from '../services/aiGrader';
 import {
+  ArrowLeft,
+  Download,
+  KeyRound,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  Upload,
+  UserPlus,
+  Users,
+  Wifi,
+} from 'lucide-react';
+import { Badge, Button, Card, SectionHeader } from '../components/ui';
+import { fetchAvailableModels, testAIConnection } from '../services/aiGrader';
+import {
+  createAccount,
+  deleteAccount,
   exportBackupPayload,
+  getAccounts,
+  getActiveAccount,
   getAIConfig,
   importListeningSets,
   importReadingPassages,
   importTranslationItems,
   importVocabItems,
   importWritingPrompts,
+  renameAccount,
   resetAllLocalData,
   restoreBackupPayload,
   saveAIConfig,
+  setActiveAccount,
 } from '../services/storage';
 import type {
   AIConfig,
@@ -20,16 +37,111 @@ import type {
   ListeningSet,
   ReadingPassage,
   TranslationItem,
+  UserAccount,
   VocabItem,
   WritingPrompt,
 } from '../types/cet4';
 
 type ImportTarget = 'vocab' | 'writing' | 'translation' | 'reading' | 'listening';
 
-export function SettingsPage() {
+export function SettingsPage({
+  onAccountChange,
+  onBack,
+  backLabel = '返回上一页',
+}: {
+  onAccountChange?: () => void;
+  onBack?: () => void;
+  backLabel?: string;
+}) {
+  const [accounts, setAccounts] = useState<UserAccount[]>(() => getAccounts());
+  const [activeAcc, setActiveAcc] = useState<UserAccount>(() => getActiveAccount());
+  const [newAccName, setNewAccName] = useState('');
+  const [renameText, setRenameText] = useState(() => getActiveAccount().name);
+  const [accountNotice, setAccountNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(
+    null,
+  );
+
   const [aiCfg, setAiCfg] = useState<AIConfig>(() => getAIConfig());
   const [aiStatus, setAiStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+  const syncAccountState = () => {
+    const nextAcc = getActiveAccount();
+    setAccounts(getAccounts());
+    setActiveAcc(nextAcc);
+    setRenameText(nextAcc.name);
+    setAiCfg(getAIConfig());
+    setAiStatus(null);
+    setAvailableModels([]);
+    onAccountChange?.();
+  };
+
+  const handleSwitchAccount = (accountId: string) => {
+    setActiveAccount(accountId);
+    syncAccountState();
+    setAccountNotice({ type: 'ok', text: `已切换到账号「${getActiveAccount().name}」，AI 与学习进度已自动隔离加载。` });
+  };
+
+  const handleCreateAccount = () => {
+    try {
+      const created = createAccount(newAccName);
+      setNewAccName('');
+      syncAccountState();
+      setAccountNotice({
+        type: 'ok',
+        text: `已创建并切换到新账号「${created.name}」，请在下方为其配置专属 API Key。`,
+      });
+    } catch (err) {
+      setAccountNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : '创建账号失败。',
+      });
+    }
+  };
+
+  const handleRenameAccount = () => {
+    try {
+      const updated = renameAccount(activeAcc.id, renameText);
+      syncAccountState();
+      setAccountNotice({ type: 'ok', text: `当前账号已更名为「${updated.name}」。` });
+    } catch (err) {
+      setAccountNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : '重命名失败。',
+      });
+    }
+  };
+
+  const handleDeleteAccount = (acc: UserAccount) => {
+    if (
+      !window.confirm(
+        `确认删除账号「${acc.name}」吗？该账号下的专属 AI 配置、错词本与练习记录将被永久清除。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      deleteAccount(acc.id);
+      syncAccountState();
+      setAccountNotice({ type: 'ok', text: `已删除账号「${acc.name}」。` });
+    } catch (err) {
+      setAccountNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : '删除账号失败。',
+      });
+    }
+  };
+
+  const handleLoadModels = async () => {
+    setLoadingModels(true);
+    setAiStatus(null);
+    const res = await fetchAvailableModels(aiCfg);
+    setAvailableModels(res.models);
+    setAiStatus({ type: res.ok ? 'ok' : 'err', text: res.message });
+    setLoadingModels(false);
+  };
 
   const [importTarget, setImportTarget] = useState<ImportTarget>('vocab');
   const [dataNotice, setDataNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -103,7 +215,9 @@ export function SettingsPage() {
     try {
       const payload = JSON.parse(await file.text()) as ExportBackupPayload;
       await restoreBackupPayload(payload);
-      setDataNotice({ type: 'ok', text: '备份已恢复！刷新页面即可看到最新学习进度。' });
+      syncAccountState();
+      onAccountChange?.();
+      setDataNotice({ type: 'ok', text: '备份已恢复并立即生效！当前账号的学习进度与题库已同步更新。' });
     } catch (err) {
       setDataNotice({
         type: 'err',
@@ -124,14 +238,120 @@ export function SettingsPage() {
     <div className="space-y-6 max-w-3xl">
       <SectionHeader
         title="设置与数据中心"
-        subtitle="配置可选 AI 批改服务、导入自定义题库或备份学习进度"
+        subtitle="管理个人学习账号、独立 AI 批改配置、自定义题库与进度备份"
+        action={
+          onBack ? (
+            <Button type="button" variant="secondary" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4" />
+              {backLabel}
+            </Button>
+          ) : undefined
+        }
       />
+
+      {/* 多用户账号管理 */}
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-indigo-600" />
+            <h2 className="text-base font-bold text-slate-900">个人账号管理（每人独立配置与 API）</h2>
+          </div>
+          <Badge tone="indigo">当前登录：{activeAcc.name}</Badge>
+        </div>
+
+        <p className="text-xs text-slate-500">
+          每个账号拥有完全独立的 API Key、模型配置、错词本、草稿与模考记录，互不干扰。
+        </p>
+
+        {/* 已有账号列表 */}
+        <div className="flex flex-wrap gap-2">
+          {accounts.map((acc) => {
+            const isCurrent = acc.id === activeAcc.id;
+            return (
+              <div
+                key={acc.id}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs sm:text-sm ${
+                  isCurrent
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-800 font-semibold'
+                    : 'border-slate-200 bg-white text-slate-700'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => !isCurrent && handleSwitchAccount(acc.id)}
+                  className="cursor-pointer"
+                >
+                  {acc.name}
+                </button>
+                {accounts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAccount(acc)}
+                    className="ml-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    title={`删除账号 ${acc.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 新建账号 + 重命名当前账号 */}
+        <div className="grid gap-3 sm:grid-cols-2 pt-1">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newAccName}
+              onChange={(e) => setNewAccName(e.target.value)}
+              placeholder="输入新账号名（如：小明）"
+              className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none"
+            />
+            <Button type="button" onClick={handleCreateAccount} className="shrink-0 text-xs px-3">
+              <UserPlus className="h-3.5 w-3.5" />
+              新建账号
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={renameText}
+              onChange={(e) => setRenameText(e.target.value)}
+              placeholder="修改当前账号名称"
+              className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleRenameAccount}
+              className="shrink-0 text-xs px-3"
+            >
+              重命名
+            </Button>
+          </div>
+        </div>
+
+        {accountNotice && (
+          <p
+            className={`text-xs font-medium ${
+              accountNotice.type === 'ok' ? 'text-emerald-600' : 'text-rose-600'
+            }`}
+          >
+            {accountNotice.text}
+          </p>
+        )}
+      </Card>
 
       {/* AI 批改设置 */}
       <Card className="space-y-4">
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-5 w-5 text-indigo-600" />
-          <h2 className="text-base font-bold text-slate-900">AI 批改配置（可选）</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-indigo-600" />
+            <h2 className="text-base font-bold text-slate-900">
+              AI 批改配置（仅对账号「{activeAcc.name}」生效）
+            </h2>
+          </div>
         </div>
 
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed flex gap-2">
@@ -144,12 +364,22 @@ export function SettingsPage() {
 
         <div className="grid gap-3">
           <label className="block text-sm">
+            <span className="font-medium text-slate-700">助手显示名称（自定义昵称）</span>
+            <input
+              type="text"
+              value={aiCfg.displayName ?? ''}
+              onChange={(e) => setAiCfg({ ...aiCfg, displayName: e.target.value })}
+              placeholder="留空或自定义名称（如：四级训练ai）"
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+          <label className="block text-sm">
             <span className="font-medium text-slate-700">API Base URL（OpenAI 兼容）</span>
             <input
               type="text"
               value={aiCfg.baseUrl}
               onChange={(e) => setAiCfg({ ...aiCfg, baseUrl: e.target.value })}
-              placeholder="https://api.deepseek.com/v1"
+              placeholder="填入你的 OpenAI 兼容接口地址（如 https://api.deepseek.com/v1）"
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
             />
           </label>
@@ -163,16 +393,47 @@ export function SettingsPage() {
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
             />
           </label>
-          <label className="block text-sm">
-            <span className="font-medium text-slate-700">模型名称（Model）</span>
+          <div className="block text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-slate-700">
+                服务端模型 ID（Model，必须填接口支持的英文模型名）
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleLoadModels()}
+                disabled={loadingModels}
+                className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 cursor-pointer"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingModels ? 'animate-spin' : ''}`} />
+                {loadingModels ? '获取中...' : '获取可用模型'}
+              </button>
+            </div>
             <input
               type="text"
               value={aiCfg.model}
               onChange={(e) => setAiCfg({ ...aiCfg, model: e.target.value })}
-              placeholder="deepseek-chat"
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              placeholder="填入服务端模型 ID（如 deepseek-chat）"
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm focus:border-indigo-500 focus:outline-none"
             />
-          </label>
+            {availableModels.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {availableModels.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setAiCfg({ ...aiCfg, model: m })}
+                    className={`rounded-lg border px-2 py-1 font-mono text-xs transition-colors cursor-pointer ${
+                      aiCfg.model === m
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-semibold'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -219,6 +480,13 @@ export function SettingsPage() {
         </div>
 
         <hr className="border-slate-100" />
+
+        <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-relaxed">
+          <span className="font-semibold text-slate-800">备份包含：</span>
+          当前账号的单词进度、错词本、练习记录与自定义导入题库；
+          <span className="font-semibold text-amber-700">不包含：</span>
+          API Key（防泄露）与本地大体积 MP3 音频文件。
+        </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <Button variant="secondary" onClick={handleExportBackup}>

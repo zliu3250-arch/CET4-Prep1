@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -20,6 +20,7 @@ import { formatDateTime, formatDuration, type TranslationSubmission } from '../s
 interface FeedbackPanelProps {
   item: TranslationItem;
   submission: TranslationSubmission;
+  autoGradeNonce?: number;
   onTogglePhrase: (phrase: string) => void;
   onSaveAIResult: (result: AIGradeResult) => void;
   onBackToPractice: () => void;
@@ -47,6 +48,7 @@ function isPhraseMatched(answer: string, phrase: string): boolean {
 export function FeedbackPanel({
   item,
   submission,
+  autoGradeNonce = 0,
   onTogglePhrase,
   onSaveAIResult,
   onBackToPractice,
@@ -54,6 +56,7 @@ export function FeedbackPanel({
   const [grading, setGrading] = useState(false);
   const [aiError, setAiError] = useState<{ code: string; message: string } | null>(null);
   const [copiedTarget, setCopiedTarget] = useState<'reference' | 'polished' | null>(null);
+  const lastAutoNonceRef = useRef(0);
 
   const aiConfigured = hasValidAIConfig();
   const aiResult = submission.aiResult;
@@ -74,7 +77,7 @@ export function FeedbackPanel({
     }
   };
 
-  const handleRequestAIGrade = async () => {
+  const handleRequestAIGrade = useCallback(async () => {
     setAiError(null);
     if (!hasValidAIConfig()) {
       setAiError({
@@ -99,7 +102,14 @@ export function FeedbackPanel({
     } finally {
       setGrading(false);
     }
-  };
+  }, [item, submission.answer, onSaveAIResult]);
+
+  useEffect(() => {
+    if (autoGradeNonce > 0 && autoGradeNonce !== lastAutoNonceRef.current) {
+      lastAutoNonceRef.current = autoGradeNonce;
+      void handleRequestAIGrade();
+    }
+  }, [autoGradeNonce, handleRequestAIGrade]);
 
   return (
     <div className="space-y-5">

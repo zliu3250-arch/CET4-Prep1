@@ -17,10 +17,12 @@ function normalizeEndpoint(baseUrl: string): string {
   return `${clean}/chat/completions`;
 }
 
-function clampScore15(raw: unknown): number {
-  const n = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isFinite(n)) return 9;
-  return Math.max(0, Math.min(15, Math.round(n * 2) / 2));
+function parseValidScore15(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+  const n = typeof raw === 'number' ? raw : Number(raw.trim());
+  if (!Number.isFinite(n) || n < 0 || n > 15) return null;
+  return Math.round(n * 2) / 2;
 }
 
 function parseGradeJson(rawText: string): AIGradeResult | null {
@@ -36,7 +38,11 @@ function parseGradeJson(rawText: string): AIGradeResult | null {
 
   try {
     const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-    const score15 = clampScore15(parsed.score15);
+    const score15 = parseValidScore15(parsed.score15);
+    const overallComment =
+      typeof parsed.overallComment === 'string' ? parsed.overallComment.trim() : '';
+    if (score15 === null || !overallComment) return null;
+
     const score106 = Math.round(score15 * 7.1 * 10) / 10;
 
     const strengths = Array.isArray(parsed.strengths)
@@ -57,10 +63,10 @@ function parseGradeJson(rawText: string): AIGradeResult | null {
     return {
       score15,
       score106,
-      overallComment: String(parsed.overallComment ?? '已完成批改。'),
+      overallComment,
       strengths,
       issues,
-      polishedVersion: String(parsed.polishedVersion ?? ''),
+      polishedVersion: typeof parsed.polishedVersion === 'string' ? parsed.polishedVersion : '',
     };
   } catch {
     return null;
@@ -224,11 +230,39 @@ export async function gradeTranslation(params: {
   return callOpenAICompatible(JSON_OUTPUT_SCHEMA_INSTRUCTION, userPrompt);
 }
 
+export async function fetchAvailableModels(
+  cfg: Pick<AIConfig, 'baseUrl' | 'apiKey'>,
+): Promise<{ ok: boolean; models: string[]; message: string }> {
+  if (!cfg.baseUrl.trim() || !cfg.apiKey.trim()) {
+    return { ok: false, models: [], message: '请先填写 Base URL 与 API Key。' };
+  }
+  const cleanBase = cfg.baseUrl.trim().replace(/\/+$/, '');
+  const modelsUrl = cleanBase.endsWith('/models') ? cleanBase : `${cleanBase}/models`;
+  try {
+    const res = await fetch(modelsUrl, {
+      headers: { Authorization: `Bearer ${cfg.apiKey.trim()}` },
+    });
+    if (!res.ok) {
+      return { ok: false, models: [], message: `获取模型列表失败（HTTP ${res.status}）。` };
+    }
+    const data = (await res.json()) as { data?: Array<{ id?: string }> };
+    const models = (data.data ?? [])
+      .map((m) => (typeof m.id === 'string' ? m.id.trim() : ''))
+      .filter(Boolean);
+    if (models.length === 0) {
+      return { ok: false, models: [], message: '接口返回的可用模型列表为空。' };
+    }
+    return { ok: true, models, message: `已获取到 ${models.length} 个可用模型，点击下方标签即可选用。` };
+  } catch {
+    return { ok: false, models: [], message: '无法获取模型列表（可能是网络异常或跨域限制）。' };
+  }
+}
+
 export async function testAIConnection(
   cfg: AIConfig,
 ): Promise<{ ok: boolean; message: string }> {
   if (!cfg.baseUrl.trim() || !cfg.apiKey.trim() || !cfg.model.trim()) {
-    return { ok: false, message: '请完整填写 Base URL、API Key 与 Model。' };
+    return { ok: false, message: '请完整填写 Base URL、API Key 与服务端模型 ID。' };
   }
 
   const controller = new AbortController();
@@ -250,11 +284,25 @@ export async function testAIConnection(
     });
 
     if (res.ok) {
-      return { ok: true, message: '连接成功！可以在写作与翻译模块使用 AI 批改。' };
+      const name = (cfg.displayName ?? '四级训练ai').trim() || '四级训练ai';
+      return { ok: true, message: `「${name}」连接成功！现在可以在写作与翻译模块使用 AI 批改。` };
     }
+
+    let detail = '';
+    try {
+      const errJson = (await res.json()) as { error?: { message?: string; code?: string } };
+      const msg = errJson.error?.message?.trim() ?? '';
+      const code = errJson.error?.code?.trim() ?? '';
+      if (msg || code) {
+        detail = `（服务端返回：${[code, msg].filter(Boolean).join(' - ')}）`;
+      }
+    } catch {
+      // ignore body parse failure
+    }
+
     return {
       ok: false,
-      message: `连接失败（HTTP ${res.status}），请检查 API Key、Base URL 或模型名。`,
+      message: `连接失败（HTTP ${res.status}）${detail || '，请检查 API Key、Base URL 或模型 ID。'}`,
     };
   } catch {
     return {

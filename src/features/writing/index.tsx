@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
-  BookMarked,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -22,6 +21,7 @@ import {
   SectionHeader,
   TimerBar,
 } from '../../components/ui';
+import { QuestionPickerBar, sortByNewestFirst } from '../../components/ui/QuestionPickerBar';
 import { gradeWriting } from '../../services/aiGrader';
 import {
   appendPracticeLog,
@@ -62,7 +62,6 @@ export default function WritingPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [insertedNotice, setInsertedNotice] = useState<string | null>(null);
   const [helperOpen, setHelperOpen] = useState(false);
-  const [promptListOpen, setPromptListOpen] = useState(true);
 
   // 倒计时器状态
   const [secondsLeft, setSecondsLeft] = useState(30 * 60);
@@ -89,9 +88,10 @@ export default function WritingPage() {
     getWritingPrompts()
       .then((list) => {
         if (!mounted) return;
-        setPrompts(list);
-        if (list.length > 0) {
-          setSelectedPromptId(list[0].id);
+        const sorted = sortByNewestFirst(list);
+        setPrompts(sorted);
+        if (sorted.length > 0) {
+          setSelectedPromptId(sorted[0].id);
         }
       })
       .finally(() => {
@@ -193,6 +193,15 @@ export default function WritingPage() {
 
   const handleSelectPrompt = (promptId: string) => {
     setSelectedPromptId(promptId);
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
   };
 
   const handleResetTimer = () => {
@@ -470,102 +479,42 @@ export default function WritingPage() {
         />
       )}
 
-      {/* 1. 选题列表（按四级题型筛选） */}
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <BookMarked className="h-4 w-4 text-indigo-600" />
-            <h2 className="text-sm font-semibold text-slate-900">
-              写作题库（共 {prompts.length} 题）
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => setPromptListOpen((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 cursor-pointer"
-          >
-            {promptListOpen ? '收起题库' : '展开选题'}
-            {promptListOpen ? (
-              <ChevronUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </div>
+      {/* 顶部紧凑选题栏：默认最新真题 + 右侧下拉键展开全部题库（按时间从新到旧） */}
+      <QuestionPickerBar
+        label="当前写作真题"
+        currentTitle={activePrompt.title}
+        currentBadge={activePrompt.category}
+        totalCount={prompts.length}
+        filterTabs={WRITING_CATEGORIES.map((cat) => ({
+          key: cat,
+          label: cat,
+          count: categoryCounts[cat],
+        }))}
+        activeFilter={categoryFilter}
+        onFilterChange={(key) => setCategoryFilter(key as WritingCategoryFilter)}
+        items={filteredPrompts.map((item) => {
+          const draftExists = hasSavedDraft(item.id);
+          const subCount = submissions.filter((s) => s.promptId === item.id).length;
+          return {
+            id: item.id,
+            title: item.title,
+            badge: item.category,
+            meta: `${item.minWords}~${item.maxWords} 词 · 建议 ${item.suggestedMinutes} 分钟`,
+            extra:
+              draftExists || subCount > 0 ? (
+                <span className="flex items-center gap-1.5">
+                  {draftExists && <Badge tone="amber">有草稿</Badge>}
+                  {subCount > 0 && <Badge tone="emerald">已练 {subCount} 次</Badge>}
+                </span>
+              ) : undefined,
+          };
+        })}
+        activeId={activePrompt.id}
+        onSelect={handleSelectPrompt}
+        emptyText={`当前「${categoryFilter}」分类下暂无题目，可切换「全部」或在设置页导入自定义写作题。`}
+      />
 
-        {/* 题型筛选标签 */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {WRITING_CATEGORIES.map((cat) => {
-            const active = categoryFilter === cat;
-            const count = categoryCounts[cat];
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => {
-                  setCategoryFilter(cat);
-                  if (!promptListOpen) setPromptListOpen(true);
-                }}
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  active
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <span>{cat}</span>
-                <span className={active ? 'text-indigo-100' : 'text-slate-400'}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 题目卡片列表 */}
-        {promptListOpen && (
-          <div className="mt-3">
-            {filteredPrompts.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs text-slate-500">
-                当前「{categoryFilter}」分类下暂无题目，可切换「全部」或在设置页导入自定义写作题。
-              </p>
-            ) : (
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                {filteredPrompts.map((item) => {
-                  const selected = item.id === activePrompt.id;
-                  const draftExists = hasSavedDraft(item.id);
-                  const subCount = submissions.filter((s) => s.promptId === item.id).length;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectPrompt(item.id)}
-                      className={`text-left rounded-xl border p-3 transition-all cursor-pointer min-w-0 ${
-                        selected
-                          ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500/30'
-                          : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50/60'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <Badge tone={selected ? 'indigo' : 'slate'}>{item.category}</Badge>
-                        <div className="flex items-center gap-1.5">
-                          {draftExists && <Badge tone="amber">有草稿</Badge>}
-                          {subCount > 0 && <Badge tone="emerald">已练 {subCount} 次</Badge>}
-                        </div>
-                      </div>
-                      <p className="mt-2 text-sm font-semibold text-slate-900 line-clamp-2">
-                        {item.title}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {item.minWords}~{item.maxWords} 词 · 建议 {item.suggestedMinutes} 分钟
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
-
-      {/* 2. 当前题目 Directions 与可折叠审题提纲 */}
+      {/* 1. 当前题目 Directions 与可折叠审题提纲（默认展示最新真题，置顶直接做题） */}
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -709,8 +658,19 @@ export default function WritingPage() {
           <textarea
             ref={textareaRef}
             value={essay}
-            onChange={(e) => setEssay(e.target.value)}
-            placeholder="请在此用英文撰写你的四级作文（支持自动保存草稿，刷新页面不丢失）..."
+            onChange={(e) => {
+              const next = e.target.value;
+              setEssay(next);
+              if (
+                !timerRunning &&
+                activePrompt &&
+                secondsLeft === activePrompt.suggestedMinutes * 60 &&
+                next.trim().length > 0
+              ) {
+                setTimerRunning(true);
+              }
+            }}
+            placeholder="请在此用英文撰写你的四级作文（开始输入自动启动倒计时，自动保存草稿）..."
             spellCheck={false}
             className="w-full min-h-[260px] sm:min-h-[320px] rounded-xl border border-slate-300 bg-white p-3.5 sm:p-4 text-sm sm:text-[15px] leading-relaxed text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-y"
           />

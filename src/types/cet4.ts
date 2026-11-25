@@ -10,6 +10,7 @@ export type ModuleKey =
   | 'translation'
   | 'reading'
   | 'listening'
+  | 'mock'
   | 'settings';
 
 export type PracticeModuleKey = Exclude<ModuleKey, 'dashboard' | 'settings'>;
@@ -95,12 +96,22 @@ export interface ListeningQuestion {
   explanation: string;
 }
 
+export interface ListeningAudioPiece {
+  label: string;
+  start: number;
+  end: number;
+}
+
 export interface ListeningSet {
   id: string;
   title: string;
   section: '新闻报道' | '长对话' | '听力篇章';
   /** 若绑定了本地上传的 MP3/WAV，则存 IndexedDB 中的 audioId（严禁存 blob: URL） */
   audioId?: string;
+  /** 可选在线真题听力音频流地址（如本地代理的 HLS .m3u8 或 MP3 URL） */
+  audioUrl?: string;
+  /** 可选分篇时间戳（用于一键跳转到 Section A/B/C 各篇） */
+  audioPieces?: ListeningAudioPiece[];
   /** 听力原文脚本（同时用于无本地音频时的 Web Speech API 模拟朗读） */
   transcript: Array<{ speaker?: string; text: string }>;
   questions: ListeningQuestion[];
@@ -128,8 +139,17 @@ export interface DashboardStats {
   recentLogs: PracticeLog[];
 }
 
+/** 0. 本地多用户账号 */
+export interface UserAccount {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 /** 7. AI 批改配置与结构化响应 */
 export interface AIConfig {
+  /** 自定义助手显示名称（如“四级训练ai”，仅用于界面展示，不作为 API 模型 ID） */
+  displayName?: string;
   baseUrl: string;
   apiKey: string;
   model: string;

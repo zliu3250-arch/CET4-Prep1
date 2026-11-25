@@ -1,3 +1,4 @@
+import { getScopedStorageKey } from '../../services/storage';
 import type { AIGradeResult } from '../../types/cet4';
 
 const DRAFT_STORAGE_KEY = 'cet4_translation_drafts_v1';
@@ -19,7 +20,7 @@ export interface TranslationSubmission {
 
 function readJson<T>(key: string, fallback: T): T {
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(getScopedStorageKey(key));
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -29,7 +30,7 @@ function readJson<T>(key: string, fallback: T): T {
 
 function writeJson(key: string, value: unknown): void {
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(getScopedStorageKey(key), JSON.stringify(value));
   } catch {
     // 忽略超出配额或隐私模式写入失败，避免中断用户练习
   }

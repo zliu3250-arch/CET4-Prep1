@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 dev-dist/
+.singlefile-tmp/
+CET4-Prep-单文件版.html
 
 # Logs & local env
 *.log

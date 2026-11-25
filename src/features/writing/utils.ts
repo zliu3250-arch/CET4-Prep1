@@ -1,3 +1,4 @@
+import { getScopedStorageKey } from '../../services/storage';
 import type { SelfCheckCriterion, WritingDraft, WritingSubmission } from './types';
 
 const DRAFT_KEY_PREFIX = 'cet4_writing_draft_v1_';
@@ -90,7 +91,7 @@ export function getWordCountStatus(
 }
 
 export function getDraftStorageKey(promptId: string): string {
-  return `${DRAFT_KEY_PREFIX}${promptId}`;
+  return getScopedStorageKey(`${DRAFT_KEY_PREFIX}${promptId}`);
 }
 
 export function readDraft(promptId: string): WritingDraft | null {
@@ -142,7 +143,7 @@ export function hasSavedDraft(promptId: string): boolean {
 
 export function readSubmissions(): WritingSubmission[] {
   try {
-    const raw = window.localStorage.getItem(SUBMISSIONS_KEY);
+    const raw = window.localStorage.getItem(getScopedStorageKey(SUBMISSIONS_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -154,7 +155,10 @@ export function readSubmissions(): WritingSubmission[] {
 
 export function saveSubmissions(list: WritingSubmission[]): void {
   try {
-    window.localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(list.slice(0, MAX_SUBMISSIONS)));
+    window.localStorage.setItem(
+      getScopedStorageKey(SUBMISSIONS_KEY),
+      JSON.stringify(list.slice(0, MAX_SUBMISSIONS)),
+    );
   } catch {
     // ignore quota errors
   }

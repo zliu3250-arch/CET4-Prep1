@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileAudio, Headphones, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, SectionHeader } from '../../components/ui';
+import { QuestionPickerBar, sortByNewestFirst } from '../../components/ui/QuestionPickerBar';
 import { stopSpeaking } from '../../services/speech';
 import {
   appendPracticeLog,
   deleteAudioBlob,
   getListeningSets,
+  getScopedStorageKey,
   importListeningSets,
   saveAudioBlob,
 } from '../../services/storage';
@@ -19,6 +21,42 @@ import {
   type ListeningSectionFilter,
   type NoticeMessage,
 } from './types';
+
+const LISTENING_DRAFT_KEY = 'cet4_listening_draft_v1';
+
+function readListeningDraft(setId: string): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(getScopedStorageKey(LISTENING_DRAFT_KEY));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { setId?: string; answers?: Record<string, string> };
+    return parsed.setId === setId && parsed.answers ? parsed.answers : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveListeningDraft(setId: string, answers: Record<string, string>): void {
+  try {
+    if (Object.keys(answers).length === 0) {
+      window.localStorage.removeItem(getScopedStorageKey(LISTENING_DRAFT_KEY));
+      return;
+    }
+    window.localStorage.setItem(
+      getScopedStorageKey(LISTENING_DRAFT_KEY),
+      JSON.stringify({ setId, answers }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function clearListeningDraft(): void {
+  try {
+    window.localStorage.removeItem(getScopedStorageKey(LISTENING_DRAFT_KEY));
+  } catch {
+    // ignore
+  }
+}
 
 interface ScoreSummary {
   correctCount: number;
@@ -52,17 +90,28 @@ export default function ListeningPage() {
   const loadListeningSets = useCallback(async (preferredId?: string) => {
     setLoading(true);
     try {
-      const data = await getListeningSets();
+      const raw = await getListeningSets();
+      const data = sortByNewestFirst(raw);
       setSets(data);
+      let resolvedId = '';
       setActiveSetId((prev) => {
         if (preferredId && data.some((item) => item.id === preferredId)) {
+          resolvedId = preferredId;
           return preferredId;
         }
         if (prev && data.some((item) => item.id === prev)) {
+          resolvedId = prev;
           return prev;
         }
-        return data[0]?.id ?? '';
+        resolvedId = data[0]?.id ?? '';
+        return resolvedId;
       });
+      if (resolvedId) {
+        const restored = readListeningDraft(resolvedId);
+        if (Object.keys(restored).length > 0) {
+          setAnswers(restored);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -107,16 +156,39 @@ export default function ListeningPage() {
   );
 
   const handleSelectSet = (setId: string) => {
-    if (setId === activeSetId) return;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    const scrollTopNow = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    if (setId === activeSetId) {
+      scrollTopNow();
+      return;
+    }
+    if (
+      !submitted &&
+      Object.keys(answers).length > 0 &&
+      !window.confirm('当前听力套题还有未交卷的作答，切换套题将清空已选答案，确认切换吗？')
+    ) {
+      return;
+    }
     stopSpeaking();
+    clearListeningDraft();
     setActiveSetId(setId);
     setPlayerNotice(null);
     resetPracticeState();
+    scrollTopNow();
+    window.requestAnimationFrame(scrollTopNow);
   };
 
   const handleSelectAnswer = (questionId: string, optionLabel: string) => {
     if (submitted) return;
-    setAnswers((prev) => ({ ...prev, [questionId]: optionLabel }));
+    setAnswers((prev) => {
+      const next = { ...prev, [questionId]: optionLabel };
+      if (activeSetId) saveListeningDraft(activeSetId, next);
+      return next;
+    });
   };
 
   const handleSubmit = () => {
@@ -136,6 +208,7 @@ export default function ListeningPage() {
 
     setScoreSummary({ correctCount, total, accuracy, durationSeconds });
     setSubmitted(true);
+    clearListeningDraft();
 
     try {
       appendPracticeLog({
@@ -156,6 +229,7 @@ export default function ListeningPage() {
   };
 
   const handleReset = () => {
+    clearListeningDraft();
     setAnswers({});
     setSubmitted(false);
     setScoreSummary(null);
@@ -281,84 +355,39 @@ export default function ListeningPage() {
         />
       )}
 
-      {/* 题型筛选与套题选择 */}
-      <Card className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {SECTION_FILTERS.map((sec) => {
-              const count =
-                sec === '全部' ? sets.length : sets.filter((s) => s.section === sec).length;
-              const active = sectionFilter === sec;
-              return (
-                <button
-                  key={sec}
-                  type="button"
-                  onClick={() => setSectionFilter(sec)}
-                  className={`rounded-xl px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {sec}
-                  <span
-                    className={`ml-1.5 text-xs ${
-                      active ? 'text-indigo-100' : 'text-slate-400'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-xs text-slate-500">共 {filteredSets.length} 套可选</span>
-        </div>
+      {/* 顶部紧凑选题栏：默认最新真题 + 右侧下拉键展开全部套题（按时间从新到旧） */}
+      {!loading && sets.length > 0 && (
+        <QuestionPickerBar
+          label="当前听力真题"
+          currentTitle={activeSet?.title ?? '请选择听力套题'}
+          currentBadge={activeSet?.section}
+          totalCount={sets.length}
+          filterTabs={SECTION_FILTERS.map((sec) => ({
+            key: sec,
+            label: sec,
+            count: sec === '全部' ? sets.length : sets.filter((s) => s.section === sec).length,
+          }))}
+          activeFilter={sectionFilter}
+          onFilterChange={(key) => setSectionFilter(key as ListeningSectionFilter)}
+          items={filteredSets.map((item) => ({
+            id: item.id,
+            title: item.title,
+            badge: item.section,
+            meta: `${item.questions.length} 题`,
+            extra: item.audioId ? <Badge tone="emerald">已绑本地音频</Badge> : undefined,
+          }))}
+          activeId={activeSet?.id ?? ''}
+          onSelect={handleSelectSet}
+        />
+      )}
 
-        {loading ? (
-          <div className="flex items-center justify-center py-6 text-sm text-slate-500 gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-            正在加载听力题库…
-          </div>
-        ) : filteredSets.length > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredSets.map((item) => {
-              const isSelected = item.id === activeSet?.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleSelectSet(item.id)}
-                  className={`rounded-xl border p-3 text-left transition-colors cursor-pointer min-w-0 ${
-                    isSelected
-                      ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500/20'
-                      : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-sm font-semibold text-slate-900 line-clamp-2 break-words">
-                      {item.title}
-                    </span>
-                    {item.audioId ? (
-                      <FileAudio className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
-                    ) : (
-                      <Headphones className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
-                    )}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <Badge tone={isSelected ? 'indigo' : 'slate'}>{item.section}</Badge>
-                    <Badge tone="slate">{item.questions.length} 题</Badge>
-                    {item.audioId && <Badge tone="emerald">已绑音频</Badge>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </Card>
-
-      {/* 主训练区 */}
-      {!loading && !activeSet ? (
+      {/* 主训练区（默认展示最新真题，置顶直接听题作答） */}
+      {loading ? (
+        <Card className="flex items-center justify-center py-10 text-sm text-slate-500 gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+          正在加载听力题库…
+        </Card>
+      ) : !activeSet ? (
         <EmptyState
           title={`「${sectionFilter}」分类下暂无听力套题`}
           description="你可以切换回「全部」查看内置示例题，或点击右上角「新建本地音频练习」导入自己的四级真题音频。"
@@ -380,7 +409,7 @@ export default function ListeningPage() {
             </div>
           }
         />
-      ) : activeSet ? (
+      ) : (
         <div className="space-y-4 min-w-0">
           <AudioPlayerCard
             listeningSet={activeSet}
@@ -413,7 +442,7 @@ export default function ListeningPage() {
             onSpeakLine={handleSpeakLine}
           />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

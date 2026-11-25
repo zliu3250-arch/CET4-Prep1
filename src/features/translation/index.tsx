@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen,
   CheckCircle2,
-  Clock,
   Eraser,
   FileCheck2,
   History,
@@ -11,6 +9,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, SectionHeader, TimerBar } from '../../components/ui';
+import { QuestionPickerBar, sortByNewestFirst } from '../../components/ui/QuestionPickerBar';
 import { appendPracticeLog, getTranslationItems } from '../../services/storage';
 import type { AIGradeResult, TranslationItem } from '../../types/cet4';
 import { FeedbackPanel } from './components/FeedbackPanel';
@@ -41,8 +40,10 @@ export default function TranslationPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>(() => getTranslationDrafts());
   const [history, setHistory] = useState<TranslationSubmission[]>(() => getTranslationHistory());
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
+  const [autoGradeNonce, setAutoGradeNonce] = useState(0);
   const [revealedHints, setRevealedHints] = useState<number[]>([]);
   const [draftSavedHint, setDraftSavedHint] = useState(false);
+  const [confirmClearDraft, setConfirmClearDraft] = useState(false);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
 
   const [secondsLeft, setSecondsLeft] = useState<number>(DEFAULT_MINUTES * 60);
@@ -53,10 +54,11 @@ export default function TranslationPage() {
     getTranslationItems()
       .then((list) => {
         if (!mounted) return;
-        setItems(list);
-        if (list.length > 0) {
-          setActiveItemId(list[0].id);
-          setSecondsLeft((list[0].suggestedMinutes || DEFAULT_MINUTES) * 60);
+        const sorted = sortByNewestFirst(list);
+        setItems(sorted);
+        if (sorted.length > 0) {
+          setActiveItemId(sorted[0].id);
+          setSecondsLeft((sorted[0].suggestedMinutes || DEFAULT_MINUTES) * 60);
         }
       })
       .finally(() => {
@@ -131,6 +133,15 @@ export default function TranslationPage() {
     setTimerRunning(false);
     setSecondsLeft((item.suggestedMinutes || DEFAULT_MINUTES) * 60);
     setActiveTab('practice');
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
   }, []);
 
   const handleDraftChange = useCallback(
@@ -155,12 +166,18 @@ export default function TranslationPage() {
 
   const handleClearDraft = () => {
     if (!activeItem || !activeDraft) return;
+    if (!confirmClearDraft) {
+      setConfirmClearDraft(true);
+      window.setTimeout(() => setConfirmClearDraft(false), 3500);
+      return;
+    }
     setDrafts((prev) => {
       const next = { ...prev };
       delete next[activeItem.id];
       return next;
     });
     saveTranslationDraft(activeItem.id, '');
+    setConfirmClearDraft(false);
     setSubmitWarning(null);
   };
 
@@ -184,7 +201,7 @@ export default function TranslationPage() {
     setRevealedHints([]);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (autoAI = false) => {
     if (!activeItem) return;
     const trimmed = activeDraft.trim();
     if (!trimmed) {
@@ -216,6 +233,9 @@ export default function TranslationPage() {
     setHistory(list);
     setActiveSubmissionId(entry.id);
     setActiveTab('feedback');
+    if (autoAI) {
+      setAutoGradeNonce((n) => n + 1);
+    }
   };
 
   const handleTogglePhrase = (phrase: string) => {
@@ -350,89 +370,56 @@ export default function TranslationPage() {
         </Button>
       </div>
 
-      {/* 视图 1：练习模式 */}
+      {/* 视图 1：练习模式（顶部紧凑下拉选题栏 + 下面直接做题） */}
       {activeTab === 'practice' && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-          {/* 左侧 / 顶部：选题列表 */}
-          <div className="space-y-3 lg:col-span-4 min-w-0">
-            <Card>
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                  <BookOpen className="h-4 w-4 text-indigo-600" />
-                  选题列表
-                </h2>
-                <span className="text-xs text-slate-400">共 {filteredItems.length} 篇</span>
-              </div>
-
-              {/* 主题筛选胶囊 */}
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {topics.map((topic) => {
-                  const selected = topic === selectedTopic;
-                  return (
-                    <button
-                      key={topic}
-                      type="button"
-                      onClick={() => setSelectedTopic(topic)}
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                        selected
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {topic}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 题目卡片列表 */}
-              <div className="mt-3 space-y-2">
-                {filteredItems.map((item) => {
-                  const isActive = item.id === activeItem.id;
-                  const hasDraft = Boolean(drafts[item.id]?.trim());
-                  const doneCount = practiceCountByItem[item.id] ?? 0;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectItem(item)}
-                      className={`w-full rounded-xl border p-3 text-left transition-all cursor-pointer ${
-                        isActive
-                          ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-200'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <Badge tone={isActive ? 'indigo' : 'slate'}>{item.topic}</Badge>
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                          <Clock className="h-3 w-3" />
-                          建议 {item.suggestedMinutes} 分钟
+        <div className="space-y-4 min-w-0">
+          <QuestionPickerBar
+            label="当前翻译真题"
+            currentTitle={activeItem.title}
+            currentBadge={activeItem.topic}
+            totalCount={items.length}
+            filterTabs={topics.map((topic) => ({
+              key: topic,
+              label: topic,
+              count: topic === '全部' ? items.length : items.filter((i) => i.topic === topic).length,
+            }))}
+            activeFilter={selectedTopic}
+            onFilterChange={setSelectedTopic}
+            items={filteredItems.map((item) => {
+              const hasDraft = Boolean(drafts[item.id]?.trim());
+              const doneCount = practiceCountByItem[item.id] ?? 0;
+              return {
+                id: item.id,
+                title: item.title,
+                badge: item.topic,
+                meta: `建议 ${item.suggestedMinutes} 分钟`,
+                extra:
+                  hasDraft || doneCount > 0 ? (
+                    <span className="flex items-center gap-1.5">
+                      {hasDraft && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+                          有草稿
                         </span>
-                      </div>
-                      <p className="mt-1.5 text-sm font-semibold text-slate-900">{item.title}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                        {hasDraft && (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
-                            有未提交草稿
-                          </span>
-                        )}
-                        {doneCount > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-emerald-700">
-                            <CheckCircle2 className="h-3 w-3" />
-                            已练 {doneCount} 次
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </Card>
-          </div>
+                      )}
+                      {doneCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-emerald-700">
+                          <CheckCircle2 className="h-3 w-3" />
+                          已练 {doneCount} 次
+                        </span>
+                      )}
+                    </span>
+                  ) : undefined,
+              };
+            })}
+            activeId={activeItem.id}
+            onSelect={(id) => {
+              const found = items.find((i) => i.id === id);
+              if (found) handleSelectItem(found);
+            }}
+          />
 
-          {/* 右侧 / 主体：原文 + 提示卡 + 译文输入区 */}
-          <div className="space-y-4 lg:col-span-8 min-w-0">
+          {/* 主体做题区 */}
+          <div className="space-y-4 min-w-0">
             {secondsLeft === 0 && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-medium text-rose-700">
                 30 分钟参考计时已结束，你可以继续完成译文后交卷，或点击右上角重置计时。
@@ -504,18 +491,22 @@ export default function TranslationPage() {
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={confirmClearDraft ? 'danger' : 'ghost'}
                   disabled={!activeDraft}
                   onClick={handleClearDraft}
                 >
                   <Eraser className="h-4 w-4" />
-                  清空当前草稿
+                  {confirmClearDraft ? '再次点击确认清空' : '清空当前草稿'}
                 </Button>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="primary" onClick={handleSubmit}>
+                  <Button type="button" variant="secondary" onClick={() => handleSubmit(false)}>
                     <Send className="h-4 w-4" />
-                    交卷对照范文
+                    仅交卷对照范文
+                  </Button>
+                  <Button type="button" variant="primary" onClick={() => handleSubmit(true)}>
+                    <Sparkles className="h-4 w-4" />
+                    交卷并 AI 打分
                   </Button>
                 </div>
               </div>
@@ -529,6 +520,7 @@ export default function TranslationPage() {
         <FeedbackPanel
           item={feedbackItem}
           submission={activeSubmission}
+          autoGradeNonce={autoGradeNonce}
           onTogglePhrase={handleTogglePhrase}
           onSaveAIResult={handleSaveAIResult}
           onBackToPractice={() => setActiveTab('practice')}

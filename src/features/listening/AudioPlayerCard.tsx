@@ -5,6 +5,7 @@ import {
   useState,
   type ChangeEvent,
 } from 'react';
+import Hls from 'hls.js';
 import {
   AlertCircle,
   FileAudio,
@@ -12,6 +13,7 @@ import {
   Loader2,
   Pause,
   Play,
+  Radio,
   RotateCcw,
   SkipBack,
   SkipForward,
@@ -73,8 +75,22 @@ export function AudioPlayerCard({
   const speechSessionRef = useRef(0);
   const speechSupported = isSpeechSupported();
 
+  const isOfflineSingleFile =
+    typeof window !== 'undefined' &&
+    (window.location.protocol === 'file:' || Boolean(document.getElementById('cet4-embedded-banks')));
   const hasLocalAudio = Boolean(listeningSet.audioId && audioUrl && !audioError);
+  const rawOnlineUrl = !hasLocalAudio ? listeningSet.audioUrl : undefined;
+  // 纯单文件离线版没有 /hls-proxy 本地代理服务，自动跳过无效的相对代理请求，直接就绪语音朗读模式
+  const onlineAudioUrl =
+    rawOnlineUrl && isOfflineSingleFile && rawOnlineUrl.startsWith('/hls-proxy')
+      ? undefined
+      : rawOnlineUrl;
+  const hasOnlineAudio = Boolean(onlineAudioUrl);
+  const hasRealAudio = hasLocalAudio || hasOnlineAudio;
   const transcript = listeningSet.transcript;
+  const audioPieces = listeningSet.audioPieces ?? [];
+  const hlsRef = useRef<Hls | null>(null);
+  const [hlsLoading, setHlsLoading] = useState(false);
 
   const stopSpeechPlayback = useCallback(() => {
     speechSessionRef.current += 1;
@@ -104,12 +120,61 @@ export function AudioPlayerCard({
     };
   }, [listeningSet.id, listeningSet.audioId, stopSpeechPlayback]);
 
+  // 挂载在线 HLS (.m3u8) 或普通在线音频到 <audio>
+  useEffect(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const el = audioRef.current;
+    if (!el || hasLocalAudio || !onlineAudioUrl) {
+      setHlsLoading(false);
+      return;
+    }
+
+    const isHls = onlineAudioUrl.includes('.m3u8');
+    if (isHls && Hls.isSupported()) {
+      setHlsLoading(true);
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+      });
+      hlsRef.current = hls;
+      hls.loadSource(onlineAudioUrl);
+      hls.attachMedia(el);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setHlsLoading(false);
+        el.playbackRate = rate;
+      });
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.fatal) {
+          setHlsLoading(false);
+          setAudioPlaying(false);
+          setAudioPlayError(
+            '在线真题音频加载失败（请确认网络连接正常，或点击右上角上传本地 MP3/WAV）。',
+          );
+        }
+      });
+      return () => {
+        hls.destroy();
+        if (hlsRef.current === hls) hlsRef.current = null;
+      };
+    }
+
+    // Safari 原生 HLS 或直接 MP3/WAV URL
+    el.src = onlineAudioUrl;
+    el.load();
+    setHlsLoading(false);
+    return undefined;
+  }, [hasLocalAudio, onlineAudioUrl, listeningSet.id]);
+
   // 同步倍速到 <audio>
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.playbackRate = rate;
     }
-  }, [rate, audioUrl]);
+  }, [rate, audioUrl, onlineAudioUrl]);
 
   // Web Speech API 逐句朗读
   const speakFromIndex = useCallback(
@@ -162,9 +227,9 @@ export function AudioPlayerCard({
 
   // 支持从原文脚本点击某一句直接跳转朗读
   useEffect(() => {
-    if (!speechTrigger || hasLocalAudio) return;
+    if (!speechTrigger || hasRealAudio) return;
     speakFromIndex(speechTrigger.index, rate);
-  }, [speechTrigger, hasLocalAudio, rate, speakFromIndex]);
+  }, [speechTrigger, hasRealAudio, rate, speakFromIndex]);
 
   const handleToggleAudio = async () => {
     const el = audioRef.current;
@@ -207,9 +272,26 @@ export function AudioPlayerCard({
     if (audioRef.current) {
       audioRef.current.playbackRate = nextRate;
     }
-    if (!hasLocalAudio && speechPlaying) {
+    if (!hasRealAudio && speechPlaying) {
       const resumeIdx = activeSpeechIndex ?? 0;
       speakFromIndex(resumeIdx, nextRate);
+    }
+  };
+
+  const handleJumpToPiece = async (startSec: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    setAudioPlayError(null);
+    el.currentTime = Math.max(0, startSec);
+    setCurrentTime(Math.max(0, startSec));
+    if (el.paused) {
+      try {
+        el.playbackRate = rate;
+        await el.play();
+        setAudioPlaying(true);
+      } catch {
+        // 允许仅跳转不自动播放
+      }
     }
   };
 
@@ -253,6 +335,8 @@ export function AudioPlayerCard({
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
             {hasLocalAudio ? (
               <FileAudio className="h-5 w-5" />
+            ) : hasOnlineAudio ? (
+              <Radio className="h-5 w-5" />
             ) : (
               <Headphones className="h-5 w-5" />
             )}
@@ -264,15 +348,21 @@ export function AudioPlayerCard({
               </h2>
               <Badge tone="indigo">{listeningSet.section}</Badge>
               {hasLocalAudio ? (
-                <Badge tone="emerald">本地音频模式</Badge>
+                <Badge tone="emerald">本地原声</Badge>
+              ) : hasOnlineAudio ? (
+                <Badge tone="indigo">在线原声</Badge>
               ) : (
                 <Badge tone="amber">语音朗读模式</Badge>
               )}
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
               {hasLocalAudio
-                ? '正在使用本地上传的音频文件播放（安全存储于 IndexedDB）'
-                : '未绑定本地音频，已自动降级为浏览器 Web Speech API 逐句朗读'}
+                ? '正在使用本地上传的音频文件播放（安全存储于本机 IndexedDB）'
+                : hasOnlineAudio
+                  ? '已接入该套四级真题原声听力音频，支持倍速、回退与分篇快捷跳转'
+                  : isOfflineSingleFile
+                    ? '单文件离线版已默认切换为浏览器逐句朗读；如需真题原声可点右侧上传手机本地 MP3'
+                    : '未绑定音频，已自动降级为浏览器 Web Speech API 逐句朗读'}
             </p>
           </div>
         </div>
@@ -349,17 +439,23 @@ export function AudioPlayerCard({
         </div>
       )}
 
-      {/* 模式 A：本地真实音频控制条 */}
-      {hasLocalAudio && audioUrl ? (
+      {/* 模式 A：本地音频或在线真题原声控制条 */}
+      {hasRealAudio ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
           <audio
             ref={audioRef}
-            src={audioUrl}
+            src={hasLocalAudio && audioUrl ? audioUrl : undefined}
             preload="metadata"
             onLoadedMetadata={(e) => {
               const el = e.currentTarget;
               setDuration(Number.isFinite(el.duration) ? el.duration : 0);
               el.playbackRate = rate;
+            }}
+            onDurationChange={(e) => {
+              const el = e.currentTarget;
+              if (Number.isFinite(el.duration) && el.duration > 0) {
+                setDuration(el.duration);
+              }
             }}
             onTimeUpdate={(e) => {
               setCurrentTime(e.currentTarget.currentTime);
@@ -369,9 +465,20 @@ export function AudioPlayerCard({
             }}
             onError={() => {
               setAudioPlaying(false);
-              setAudioPlayError('无法解码该本地音频，请尝试重新上传标准 MP3 或 WAV 文件。');
+              setAudioPlayError(
+                hasLocalAudio
+                  ? '无法解码该本地音频，请尝试重新上传标准 MP3 或 WAV 文件。'
+                  : '在线真题音频加载失败，请确认网络畅通后重试，或上传本地 MP3/WAV 文件。',
+              );
             }}
           />
+
+          {hlsLoading && (
+            <div className="flex items-center gap-2 text-xs text-indigo-600">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              正在缓冲真题听力原声流…
+            </div>
+          )}
 
           {/* 进度条 + 时间 */}
           <div className="space-y-1.5">
@@ -440,6 +547,34 @@ export function AudioPlayerCard({
               ))}
             </div>
           </div>
+
+          {/* 分篇快捷跳转（真题原声 Section A / B / C 时间点） */}
+          {audioPieces.length > 0 && (
+            <div className="border-t border-slate-200/80 pt-2.5">
+              <p className="mb-1.5 text-[11px] font-medium text-slate-500">
+                分篇快捷跳转（点击直达对应听力片段）：
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {audioPieces.map((piece) => {
+                  const active = currentTime >= piece.start && currentTime < piece.end;
+                  return (
+                    <button
+                      key={`${piece.label}-${piece.start}`}
+                      type="button"
+                      onClick={() => void handleJumpToPiece(piece.start)}
+                      className={`rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors cursor-pointer ${
+                        active
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      {piece.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {audioPlayError && (
             <p className="text-xs text-rose-600 flex items-center gap-1.5">

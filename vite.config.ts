@@ -5,10 +5,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
+  server: {
+    proxy: {
+      '/hls-proxy': {
+        target: 'https://listening.lazynote.cn',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/hls-proxy/, ''),
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      selfDestroying: true,
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
@@ -30,7 +40,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,json}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        globIgnores: ['data/*.json'],
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
     }),
   ],

@@ -191,15 +191,6 @@ export function WrongBookView({
                   </div>
 
                   <p className="text-sm font-medium text-slate-800">{item.meaning}</p>
-
-                  {item.example && (
-                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                      <p>{item.example}</p>
-                      {item.exampleCn && (
-                        <p className="mt-1 text-slate-500">{item.exampleCn}</p>
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">

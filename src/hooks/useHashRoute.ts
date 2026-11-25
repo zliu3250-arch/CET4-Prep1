@@ -8,6 +8,7 @@ const VALID_ROUTES: ModuleKey[] = [
   'translation',
   'reading',
   'listening',
+  'mock',
   'settings',
 ];
 
