@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="28" fill="#4f46e5"/>
+  <text x="64" y="58" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="800">CET4</text>
+  <rect x="26" y="74" width="76" height="6" rx="3" fill="#a5b4fc"/>
+  <text x="64" y="102" text-anchor="middle" fill="#e0e7ff" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600">PREP</text>
+</svg>
