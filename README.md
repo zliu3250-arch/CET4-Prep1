@@ -66,6 +66,36 @@ npm run build:singlefile
 
 ---
 
+## 开发者复用：3 步替换成你自己的词库/题库（单文件离线框架）
+
+本项目所有内置词库与练习数据均解耦在 `public/data/` 目录下，并通过 [`scripts/build-singlefile.mjs`](./scripts/build-singlefile.mjs) 在构建时以 Vite IIFE 模式内联到 `<script id="cet4-embedded-banks" type="application/json">` 中。**你只需 3 步即可把它改造成六级 / 考研 / 托福 / 教资或面试单文件离线刷题器**：
+
+1. **查看并替换 `public/data/` 下的对应 JSON 数据文件**：
+   - `public/data/vocab-cet4.json`（词库数组）
+   - `public/data/reading-2021-2025.json`、`listening-2021-2025.json`、`writing-2021-2025.json`、`translation-2021-2025.json`
+2. **最小词库 JSON 格式示例（`public/data/vocab-cet4.json`）**：
+   ```json
+   [
+     {
+       "id": "custom-1",
+       "word": "physician",
+       "phonetic": "/fɪˈzɪʃn/",
+       "pos": "n.",
+       "meaning": "医师、内科医生",
+       "tags": ["高频核心", "B2"]
+     }
+   ]
+   ```
+3. **本地验证并一键打包独立单文件 HTML**：
+   ```bash
+   npm run typecheck
+   npm run build:singlefile
+   # 构建脚本会自动完成 IIFE 打包、JSON 内联转义与防 API Key 泄露自检
+   # 输出根目录独立离线文件：CET4-Prep-单文件版.html
+   ```
+
+---
+
 ## 技术栈
 
 - **框架**：React 19 + TypeScript 5（严格模式）+ Vite 6
@@ -75,10 +105,11 @@ npm run build:singlefile
 
 ---
 
-## 隐私与开源协议
+## 隐私、离线边界与开源协议
 
-- **隐私安全**：本应用为纯前端项目，你的 API Key、学习进度、错词本、作文草稿与本地音频**仅存储在你自己的浏览器本地**，不会上传到任何作者服务器。
-- **开源协议**：本项目源代码基于 [MIT License](./LICENSE) 开源，仅供个人学习与英语备考交流使用。
+- **隐私与 AI 数据流向（BYOK）**：本应用无作者后端服务器，你的学习进度、错词本、草稿、本地音频与 API Key **仅存储在你自己的浏览器本地**；当你主动点击「AI 批改」时，浏览器会将你填写的 Key 与作文/译文**直接发送至你配置的第三方 OpenAI 兼容服务商**（可能产生的 API 费用由用户自行承担）。不配置 Key 时，离线范文与自评功能独立可用。
+- **单文件离线边界**：提前下载单文件 HTML 到手机后可离线刷词、刷阅读、看范文和做套卷限时练习（未配 AI 时客观题自动计分）；离线模式下听力默认降级为浏览器 Web Speech API 逐句朗读，如需原声可导入本地 MP3/WAV。不同手机浏览器对本地 `file://` 的存储与语音兼容存在差异。
+- **开源协议与数据边界**：本项目**源代码**基于 [MIT License](./LICENSE) 开源；内置整理的词库、练习文本与音频索引仅作个人学习与技术交流演示，不包含在 MIT 授权范围内，亦非考试机构官方授权。
 
 ---
 
