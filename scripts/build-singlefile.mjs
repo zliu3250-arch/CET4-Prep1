@@ -81,8 +81,28 @@ async function main() {
     for (const fileName of DATA_FILES) {
       const raw = await fs.readFile(path.join(ROOT_DIR, 'public/data', fileName), 'utf8');
       const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error(`数据校验失败：${fileName} 必须为非空数组`);
+      }
+      if (fileName === 'vocab-cet4.json') {
+        const seenIds = new Set();
+        const requiredKeys = ['id', 'word', 'pos', 'meaning'];
+        for (const [idx, item] of parsed.entries()) {
+          const invalidKey = !item
+            ? 'item'
+            : requiredKeys.find((k) => typeof item[k] !== 'string' || !item[k].trim());
+          if (invalidKey) {
+            throw new Error(`词库校验失败：vocab-cet4.json 第 ${idx} 条缺少有效非空字段 (${invalidKey})`);
+          }
+          const cleanId = item.id.trim();
+          if (seenIds.has(cleanId)) {
+            throw new Error(`词库校验失败：vocab-cet4.json 存在重复 id: ${cleanId}`);
+          }
+          seenIds.add(cleanId);
+        }
+      }
       embeddedBanks[fileName] = parsed;
-      stats.push(`${fileName}: ${Array.isArray(parsed) ? parsed.length : 0} 条`);
+      stats.push(`${fileName}: ${parsed.length} 条`);
     }
 
     const banksJson = escapeInlineScript(JSON.stringify(embeddedBanks));
@@ -111,20 +131,21 @@ async function main() {
 </html>
 `;
 
-    await fs.writeFile(OUTPUT_FILE, html, 'utf8');
-
-    console.log('[4/4] 正在执行隐私与完整性自检...');
-    if (/sk-[A-Za-z0-9]{20,}/.test(html)) {
-      throw new Error('隐私自检失败：单文件中检测到疑似 API Key！');
+    console.log('[4/4] 正在写入前执行 sk- 密钥格式正则检查与输出...');
+    if (/sk-[A-Za-z0-9_-]{20,}/.test(html)) {
+      throw new Error('构建中止：输出内容匹配到疑似 sk- 格式 API Key，已阻止写入单文件！');
     }
 
+    await fs.writeFile(OUTPUT_FILE, html, 'utf8');
+
     const stat = await fs.stat(OUTPUT_FILE);
-    const sizeMB = (stat.size / (1024 * 1024)).toFixed(2);
+    const sizeMiB = (stat.size / (1024 * 1024)).toFixed(2);
+    const sizeMB = (stat.size / 1_000_000).toFixed(2);
     console.log(`\n✅ 单文件版构建成功！`);
     console.log(`   输出文件: ${OUTPUT_FILE}`);
-    console.log(`   文件体积: ${sizeMB} MB (${stat.size.toLocaleString()} bytes)`);
+    console.log(`   文件体积: ${sizeMiB} MiB / ${sizeMB} MB (${stat.size.toLocaleString()} bytes)`);
     console.log(`   内置题库: ${stats.join(' | ')}`);
-    console.log(`   隐私检查: 0 敏感信息，任何新手机/新电脑打开均为全新空白账号`);
+    console.log(`   密钥检查: 特定 sk- 格式正则检查通过（非通用全服务商密钥扫描器）`);
   } finally {
     await fs.rm(TMP_DIR, { recursive: true, force: true });
   }

@@ -66,32 +66,32 @@ npm run build:singlefile
 
 ---
 
-## 开发者复用：3 步替换成你自己的词库/题库（单文件离线框架）
+## 开发者复用：替换词库/题库并打包单文件离线版
 
-本项目所有内置词库与练习数据均解耦在 `public/data/` 目录下，并通过 [`scripts/build-singlefile.mjs`](./scripts/build-singlefile.mjs) 在构建时以 Vite IIFE 模式内联到 `<script id="cet4-embedded-banks" type="application/json">` 中。**你只需 3 步即可把它改造成六级 / 考研 / 托福 / 教资或面试单文件离线刷题器**：
+本项目内置词库与练习数据解耦在 `public/data/` 目录下，并通过 [`scripts/build-singlefile.mjs`](./scripts/build-singlefile.mjs)（150 行左右）以 Vite IIFE 模式内联到 `<script id="cet4-embedded-banks" type="application/json">` 中。**替换符合现有数据结构的文件即可复用这套单文件离线构建流程**（若要完整迁移到其他考试，除替换对应题库外，还需按需调整题型、界面文案与评分/组卷逻辑）：
 
-1. **查看并替换 `public/data/` 下的对应 JSON 数据文件**：
-   - `public/data/vocab-cet4.json`（词库数组）
+1. **查看并替换 `public/data/` 下的 JSON 数据文件**（顶层均须为非空数组）：
+   - `public/data/vocab-cet4.json`（词汇数组；注意：前端按数组前 `800 / 1500 / 3000 / 4000` 条切分累积词档，而非按 `tags` 分级；选择题干扰项来自同词库其他不同词义词条，因此自定义词库建议至少包含 4 条不同词义，否则选择题选项会少于 4 项）
    - `public/data/reading-2021-2025.json`、`listening-2021-2025.json`、`writing-2021-2025.json`、`translation-2021-2025.json`
 2. **最小词库 JSON 格式示例（`public/data/vocab-cet4.json`）**：
+   `VocabItem` 必填字段仅 4 项（`id` 须唯一、`word`、`pos`、`meaning`）；`phonetic` 与 `tags` 为可选项：
    ```json
    [
      {
        "id": "custom-1",
        "word": "physician",
-       "phonetic": "/fɪˈzɪʃn/",
        "pos": "n.",
-       "meaning": "医师、内科医生",
-       "tags": ["高频核心", "B2"]
+       "meaning": "医师、内科医生"
      }
    ]
    ```
-3. **本地验证并一键打包独立单文件 HTML**：
+3. **本地验证并打包独立单文件 HTML**：
    ```bash
    npm run typecheck
    npm run build:singlefile
-   # 构建脚本会自动完成 IIFE 打包、JSON 内联转义与防 API Key 泄露自检
-   # 输出根目录独立离线文件：CET4-Prep-单文件版.html
+   # 构建脚本会自动执行 IIFE 单块打包、vocab-cet4 必填字段/唯一 id 校验、JSON 内联转义
+   # 并在写入文件前执行特定 sk-... 格式正则检查（非通用全服务商密钥扫描器）
+   # 输出根目录独立离线文件：CET4-Prep-单文件版.html（当前约 5.18 MiB / 5.43 MB）
    ```
 
 ---
@@ -107,9 +107,9 @@ npm run build:singlefile
 
 ## 隐私、离线边界与开源协议
 
-- **隐私与 AI 数据流向（BYOK）**：本应用无作者后端服务器，你的学习进度、错词本、草稿、本地音频与 API Key **仅存储在你自己的浏览器本地**；当你主动点击「AI 批改」时，浏览器会将你填写的 Key 与作文/译文**直接发送至你配置的第三方 OpenAI 兼容服务商**（可能产生的 API 费用由用户自行承担）。不配置 Key 时，离线范文与自评功能独立可用。
-- **单文件离线边界**：提前下载单文件 HTML 到手机后可离线刷词、刷阅读、看范文和做套卷限时练习（未配 AI 时客观题自动计分）；离线模式下听力默认降级为浏览器 Web Speech API 逐句朗读，如需原声可导入本地 MP3/WAV。不同手机浏览器对本地 `file://` 的存储与语音兼容存在差异。
-- **开源协议与数据边界**：本项目**源代码**基于 [MIT License](./LICENSE) 开源；内置整理的词库、练习文本与音频索引仅作个人学习与技术交流演示，不包含在 MIT 授权范围内，亦非考试机构官方授权。
+- **不自建应用后端 & AI 数据流向（BYOK）**：在线版采用 GitHub Pages 静态托管，无作者自建应用后端。学习进度、错词本、草稿与 API Key 明文保存在用户浏览器 `localStorage` 中（源码未对 Key 做额外加密，请勿在公共设备上保存个人 Key）。当你点击「加载模型列表」「测试连接」或「AI 批改」时，浏览器会**直接向你配置的第三方 OpenAI 兼容端点发送请求**（包括 API Key，以及写作的题目标题/要求/字数限制/你的作文，或翻译的中文原文/参考译文/你的译文），可能产生的 API 费用由用户自行承担。不配置 Key 时，离线范文与自评独立可用。
+- **单文件离线边界**：单文件 HTML 内置应用代码与文本题库，但**真题 HLS 原音频不会随单文件离线**；离线刷听力时默认使用浏览器 Web Speech API 逐句朗读（语音是否可用、是否支持离线取决于设备浏览器与系统语音包），也可自行导入本地 MP3/WAV（存入 IndexedDB，播放时临时生成 Object URL 并在卸载时撤销，不持久化 `blob:` URL）。125 分钟套卷限时在未配置 AI 时仅对客观题自动计分。不同手机浏览器对本地 `file://` 的存储持久化行为存在差异。
+- **开源协议与数据来源边界**：本项目**源代码**基于 [MIT License](./LICENSE) 开源；`public/data/` 下的词库、练习文本与音频索引由 [`scripts/fetch-cet4-data.mjs`](./scripts/fetch-cet4-data.mjs) 汇总自公开第三方仓库（具体上游地址见该脚本），**不包含在 MIT 授权范围内，亦非考试机构官方授权**。如需二次分发内置题库或音频，请自行核实上游仓库许可与原内容版权授权。
 
 ---
 
