@@ -50,7 +50,7 @@
   <text x="364" y="168" fill="url(#accent)" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="34" font-weight="700">英语四级全能备考助手</text>
 
   <!-- Subtitle -->
-  <text x="64" y="218" fill="#cbd5e1" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="400">纯前端离线刷题 · 2021–2026 官方真题 · 4,000 核心词四档分级 · 可选 AI 批改</text>
+  <text x="64" y="218" fill="#cbd5e1" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="400">纯前端离线刷题 · 2021–2026 历年套卷整理 · 4,000 词四档分级 · 可选 AI 批改</text>
 
   <!-- Highlight Pills Row 1 -->
   <g font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="600">
@@ -58,10 +58,10 @@
     <text x="84" y="281" fill="#e0e7ff">4,000 核心词四档分级</text>
 
     <rect x="276" y="256" width="196" height="40" rx="12" fill="url(#cardBg)" stroke="#34d399" stroke-opacity="0.45"/>
-    <text x="296" y="281" fill="#d1fae5">39 套 21–26 官方真题</text>
+    <text x="296" y="281" fill="#d1fae5">39 套 21–26 历年套卷</text>
 
     <rect x="486" y="256" width="186" height="40" rx="12" fill="url(#cardBg)" stroke="#fbbf24" stroke-opacity="0.45"/>
-    <text x="506" y="281" fill="#fef3c7">710 分制全真模考</text>
+    <text x="506" y="281" fill="#fef3c7">125 分钟限时模考</text>
   </g>
 
   <!-- Highlight Pills Row 2 -->
@@ -79,7 +79,7 @@
   <!-- Right Metric Showcase Card -->
   <rect x="815" y="54" width="400" height="312" rx="22" fill="#0f172a" fill-opacity="0.62" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.5"/>
 
-  <text x="845" y="96" fill="#94a3b8" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="600" letter-spacing="1">BUILT-IN OFFICIAL BANK</text>
+  <text x="845" y="96" fill="#94a3b8" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="600" letter-spacing="1">BUILT-IN PRACTICE BANK</text>
   <text x="845" y="128" fill="#ffffff" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif" font-size="22" font-weight="700">开箱即用 · 全模块覆盖</text>
 
   <!-- Stat Grid inside Right Card -->
@@ -89,7 +89,7 @@
 
   <rect x="1023" y="150" width="162" height="84" rx="14" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.1"/>
   <text x="1041" y="186" fill="#34d399" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="28" font-weight="800">135+</text>
-  <text x="1041" y="214" fill="#cbd5e1" font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13">历年官方阅读真题</text>
+  <text x="1041" y="214" fill="#cbd5e1" font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13">历年整理阅读篇章</text>
 
   <rect x="845" y="248" width="162" height="84" rx="14" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.1"/>
   <text x="863" y="284" fill="#fbbf24" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="28" font-weight="800">39 套</text>
