@@ -15,6 +15,7 @@ import {
 import { useHashRoute } from '../hooks/useHashRoute';
 import { getAccounts, getActiveAccount, setActiveAccount } from '../services/storage';
 import type { ModuleKey, UserAccount } from '../types/cet4';
+import type { VocabQuickPreset } from '../features/vocab';
 import { DashboardPage } from './DashboardPage';
 import { SettingsPage } from './SettingsPage';
 
@@ -32,7 +33,7 @@ const NAV_ITEMS: Array<{
   icon: typeof Home;
 }> = [
   { key: 'dashboard', label: '学习首页', shortLabel: '首页', icon: Home },
-  { key: 'vocab', label: '单词拼写', shortLabel: '单词', icon: SpellCheck },
+  { key: 'vocab', label: '词汇训练', shortLabel: '单词', icon: SpellCheck },
   { key: 'writing', label: '写作训练', shortLabel: '写作', icon: PenLine },
   { key: 'translation', label: '翻译训练', shortLabel: '翻译', icon: Languages },
   { key: 'reading', label: '阅读理解', shortLabel: '阅读', icon: BookOpen },
@@ -46,6 +47,21 @@ export function App() {
   const [accounts, setAccounts] = useState<UserAccount[]>(() => getAccounts());
   const [activeAccount, setActiveAccountState] = useState<UserAccount>(() => getActiveAccount());
   const [lastNonSettingsRoute, setLastNonSettingsRoute] = useState<ModuleKey>('dashboard');
+  const [vocabQuickPreset, setVocabQuickPreset] = useState<VocabQuickPreset | null>(null);
+
+  const handleStartQuickVocab = useCallback(() => {
+    setVocabQuickPreset({
+      tier: 800,
+      mode: 'en_to_zh_choice',
+      batchSize: 10,
+      label: '10词快测',
+    });
+    navigate('vocab');
+  }, [navigate]);
+
+  const handleVocabPresetConsumed = useCallback(() => {
+    setVocabQuickPreset(null);
+  }, []);
 
   // 记录打开设置前正在使用的页面，便于点击返回键精准回到原界面
   useEffect(() => {
@@ -82,9 +98,16 @@ export function App() {
   const renderPage = () => {
     switch (route) {
       case 'dashboard':
-        return <DashboardPage onNavigate={navigate} />;
+        return (
+          <DashboardPage onNavigate={navigate} onStartQuickVocab={handleStartQuickVocab} />
+        );
       case 'vocab':
-        return <VocabPage />;
+        return (
+          <VocabPage
+            initialPreset={vocabQuickPreset}
+            onPresetConsumed={handleVocabPresetConsumed}
+          />
+        );
       case 'writing':
         return <WritingPage />;
       case 'translation':

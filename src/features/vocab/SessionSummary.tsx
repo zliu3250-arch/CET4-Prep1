@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from 'react';
 import {
   Award,
   BookMarked,
+  Check,
   CheckCircle2,
+  Copy,
   Flame,
   RotateCcw,
   Volume2,
@@ -48,6 +51,42 @@ export function SessionSummary({
   const wrongRecords = records.filter((r) => !r.correct);
   const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
 
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'manual'>('idle');
+  const copyTimerRef = useRef<number | null>(null);
+
+  const summaryText = `CET4-Prep 词汇练习（${modeLabel}）：${correctCount}/${total}（正确率 ${accuracy}% · 最高连对 ${bestStreak} · 错词 ${wrongRecords.length} · 用时 ${formatDuration(durationSeconds)}）`;
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopySummary = async () => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+
+    try {
+      if (window.isSecureContext && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(summaryText);
+        setCopyState('copied');
+        copyTimerRef.current = window.setTimeout(() => {
+          setCopyState('idle');
+          copyTimerRef.current = null;
+        }, 2500);
+        return;
+      }
+    } catch {
+      // 某些移动端或 file:// 环境下 Clipboard API 会被浏览器拒绝，降级为可见手动选择区
+    }
+
+    setCopyState('manual');
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -55,7 +94,7 @@ export function SessionSummary({
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
             <Award className="h-7 w-7" />
           </div>
-          <h2 className="mt-3 text-xl font-bold text-slate-900">本轮拼写完成！</h2>
+          <h2 className="mt-3 text-xl font-bold text-slate-900">本轮练习完成！</h2>
           <p className="mt-1 text-sm text-slate-500">
             练习范围：{modeLabel} · 用时 {formatDuration(durationSeconds)} · 成绩已计入学习记录
           </p>
@@ -66,7 +105,7 @@ export function SessionSummary({
               <p className="mt-1 text-2xl font-bold text-indigo-600">{accuracy}%</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">拼对 / 总数</p>
+              <p className="text-xs text-slate-500">答对 / 总数</p>
               <p className="mt-1 text-2xl font-bold text-emerald-600">
                 {correctCount}
                 <span className="text-sm font-medium text-slate-400"> / {total}</span>
@@ -98,11 +137,45 @@ export function SessionSummary({
                 重练本轮 {wrongRecords.length} 个错词
               </Button>
             )}
+            <Button variant="secondary" onClick={() => void handleCopySummary()}>
+              {copyState === 'copied' ? (
+                <>
+                  <Check className="h-4 w-4 text-emerald-600" />
+                  已复制战绩
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  复制本轮战绩
+                </>
+              )}
+            </Button>
             <Button variant="ghost" onClick={onOpenWrongBook}>
               <BookMarked className="h-4 w-4" />
               查看错词本
             </Button>
           </div>
+
+          {copyState === 'manual' && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 w-full max-w-xl rounded-xl border border-amber-200 bg-amber-50 p-3 text-left"
+            >
+              <p className="text-xs font-medium text-amber-800">
+                当前环境不支持自动复制（例如手机本地 file:// 打开），请长按或全选下方战绩文本手动复制：
+              </p>
+              <textarea
+                readOnly
+                rows={2}
+                value={summaryText}
+                aria-label="本轮战绩文本"
+                onFocus={(e) => e.currentTarget.select()}
+                onClick={(e) => e.currentTarget.select()}
+                className="mt-2 w-full resize-none rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -136,7 +209,7 @@ export function SessionSummary({
                     <XCircle className="h-3.5 w-3.5 shrink-0" />
                     {record.revealedAnswer
                       ? '已查看完整答案'
-                      : `你的拼写：${record.userInput || '（未填写）'}`}
+                      : `你的作答：${record.userInput || '（未填写）'}`}
                   </p>
                 </div>
 
@@ -161,7 +234,7 @@ export function SessionSummary({
         <Card className="border-emerald-200 bg-emerald-50/50">
           <div className="flex items-center gap-2.5 text-sm font-medium text-emerald-800">
             <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-            <span>本轮全部拼写正确，零失误！</span>
+            <span>本轮全部答对，零失误！</span>
           </div>
         </Card>
       )}

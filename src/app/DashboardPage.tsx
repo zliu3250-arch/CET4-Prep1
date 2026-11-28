@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   Award,
   BookOpen,
   CheckCircle2,
@@ -6,6 +7,7 @@ import {
   Headphones,
   Languages,
   PenLine,
+  Sparkles,
   SpellCheck,
   AlertCircle,
 } from 'lucide-react';
@@ -22,8 +24,8 @@ const MODULE_CARDS: Array<{
 }> = [
   {
     key: 'vocab',
-    title: '单词拼写',
-    desc: '听音/看释义拼写、字母提示与错词本重练',
+    title: '词汇训练',
+    desc: '4,000 词四档分级、5 种题型（选词/拼写）与错词本重练',
     icon: SpellCheck,
     color: 'bg-indigo-50 text-indigo-600',
   },
@@ -51,14 +53,14 @@ const MODULE_CARDS: Array<{
   {
     key: 'listening',
     title: '听力训练',
-    desc: '近五年真题原声播放、倍速/回退与原文对照',
+    desc: '历年听力套卷练习、倍速/回退、离线朗读与原文对照',
     icon: Headphones,
     color: 'bg-violet-50 text-violet-600',
   },
   {
     key: 'mock',
-    title: '综合测试（全真套卷）',
-    desc: '历年四级真题完整套卷 · 125 分钟模考 + 710 分制 AI 自动打分',
+    title: '综合测试（套卷模考）',
+    desc: '历年四级整理套卷 · 125 分钟限时 + 客观题自动计分（可选 AI 估分）',
     icon: Award,
     color: 'bg-rose-50 text-rose-600',
   },
@@ -73,15 +75,23 @@ const MODULE_LABELS: Record<PracticeModuleKey, string> = {
   mock: '模考',
 };
 
-export function DashboardPage({ onNavigate }: { onNavigate: (next: ModuleKey) => void }) {
+export function DashboardPage({
+  onNavigate,
+  onStartQuickVocab,
+}: {
+  onNavigate: (next: ModuleKey) => void;
+  onStartQuickVocab: () => void;
+}) {
   const stats = getDashboardStats();
   const aiReady = hasValidAIConfig();
+  const isFirstVisit =
+    stats.totalCount === 0 && stats.masteredWordCount === 0 && stats.wrongWordCount === 0;
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title="CET-4 英语四级备考工作台"
-        subtitle="纯前端离线 PWA · 五大核心题型专项突破"
+        subtitle="纯前端本地优先 PWA · 六大训练模块"
         action={
           <button
             type="button"
@@ -94,6 +104,43 @@ export function DashboardPage({ onNavigate }: { onNavigate: (next: ModuleKey) =>
           </button>
         }
       />
+
+      {isFirstVisit && (
+        <Card className="border-indigo-200 bg-indigo-50/60">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-0.5 rounded-xl bg-indigo-100 p-2 text-indigo-600 shrink-0">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  首次打开？免登录、零广告，直接开始 1 分钟核心词自测
+                </p>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  所有进度与错词本默认保存在本地浏览器，不配置 AI Key 也可完整刷题与对照范文。
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={onStartQuickVocab}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer"
+              >
+                开始 800 核心词 10 词快测
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('mock')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3.5 py-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer"
+              >
+                体验 125 分钟模考
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* 顶部核心指标 */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -135,9 +182,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (next: ModuleKey) =>
         </Card>
       </div>
 
-      {/* 五大功能模块入口 */}
+      {/* 六大功能模块入口 */}
       <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-800">五大专项训练</h2>
+        <h2 className="mb-3 text-base font-semibold text-slate-800">六大训练模块</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {MODULE_CARDS.map((item) => {
             const Icon = item.icon;

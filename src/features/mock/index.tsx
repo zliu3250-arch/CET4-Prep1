@@ -452,10 +452,10 @@ export default function MockExamPage() {
     return (
       <div>
         <SectionHeader
-          title="综合测试（全真套卷模考）"
-          subtitle="近五年四级真题完整套卷 · 710 分制 + AI 自动批改写作与翻译"
+          title="综合测试（套卷模考）"
+          subtitle="历年四级整理套卷 · 125 分钟限时 · 客观题自动计分 + 可选 AI 批改"
         />
-        <Card className="py-12 text-center text-sm text-slate-500">正在组装历年真题套卷...</Card>
+        <Card className="py-12 text-center text-sm text-slate-500">正在组装历年练习套卷...</Card>
       </div>
     );
   }
@@ -465,8 +465,8 @@ export default function MockExamPage() {
     return (
       <div className="space-y-5">
         <SectionHeader
-          title="综合测试（全真套卷模考）"
-          subtitle={`已整合 ${papers.length} 套 2021–2026 四级官方完整真题套卷 · 125 分钟考场计时 · 710 分制自动判分 + AI 批改`}
+          title="综合测试（套卷模考）"
+          subtitle={`已整合 ${papers.length} 套 2021–2026 历年整理套卷 · 125 分钟限时 · 客观题自动计分 + 可选 AI 估分`}
           action={
             <Badge tone={hasValidAIConfig() ? 'emerald' : 'amber'}>
               {hasValidAIConfig() ? 'AI 写作/翻译自动打分已就绪' : '未配置 AI（可客观判分+范文对照）'}
@@ -487,7 +487,7 @@ export default function MockExamPage() {
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              {y === '全部' ? `全部套卷 (${papers.length})` : `${y} 年真题`}
+              {y === '全部' ? `全部套卷 (${papers.length})` : `${y} 年套卷`}
             </button>
           ))}
         </div>

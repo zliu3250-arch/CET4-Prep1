@@ -40,8 +40,15 @@ import {
 type ActiveTab = 'practice' | 'wrongbook';
 type FilterMode = 'all' | 'wrong' | 'unmastered';
 type AccentLang = 'en-US' | 'en-GB';
-type BatchSize = 20 | 50 | 100 | 0; // 0 表示全部
+type BatchSize = 10 | 20 | 50 | 100 | 0; // 0 表示全部
 type VocabTier = 800 | 1500 | 3000 | 4000;
+
+export interface VocabQuickPreset {
+  tier: VocabTier;
+  mode: VocabPracticeMode;
+  batchSize: BatchSize;
+  label?: string;
+}
 
 const VOCAB_TIERS: Array<{ size: VocabTier; label: string; desc: string }> = [
   { size: 800, label: '800 词 · 最核心', desc: '历年真题考查概率最高的核心必考词' },
@@ -90,6 +97,7 @@ const MODE_LABELS: Record<VocabPracticeMode, string> = {
 };
 
 const BATCH_OPTIONS: Array<{ value: BatchSize; label: string }> = [
+  { value: 10, label: '10词/组（快测）' },
   { value: 20, label: '20词/组' },
   { value: 50, label: '50词/组' },
   { value: 100, label: '100词/组' },
@@ -101,18 +109,28 @@ function resolveQuestionMode(mode: VocabPracticeMode, index: number): ConcreteVo
   return CONCRETE_MODES[index % CONCRETE_MODES.length];
 }
 
-export default function VocabPage() {
+export default function VocabPage({
+  initialPreset = null,
+  onPresetConsumed,
+}: {
+  initialPreset?: VocabQuickPreset | null;
+  onPresetConsumed?: () => void;
+}) {
   const [vocabList, setVocabList] = useState<VocabItem[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, VocabProgress>>({});
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('practice');
-  const [vocabTier, setVocabTier] = useState<VocabTier>(800);
-  const [practiceMode, setPracticeMode] = useState<VocabPracticeMode>('en_to_zh_choice');
+  const [vocabTier, setVocabTier] = useState<VocabTier>(() => initialPreset?.tier ?? 800);
+  const [practiceMode, setPracticeMode] = useState<VocabPracticeMode>(
+    () => initialPreset?.mode ?? 'en_to_zh_choice',
+  );
   const [filterMode, setFilterMode] = useState<FilterMode>('unmastered');
-  const [batchSize, setBatchSize] = useState<BatchSize>(20);
+  const [batchSize, setBatchSize] = useState<BatchSize>(() => initialPreset?.batchSize ?? 20);
   const [batchOffset, setBatchOffset] = useState(0);
-  const [customModeLabel, setCustomModeLabel] = useState<string | null>(null);
+  const [customModeLabel, setCustomModeLabel] = useState<string | null>(
+    () => initialPreset?.label ?? null,
+  );
   const [shuffled, setShuffled] = useState(false);
   const [accent, setAccent] = useState<AccentLang>('en-US');
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
@@ -142,6 +160,9 @@ export default function VocabPage() {
   const sessionLoggedRef = useRef(false);
   const hasFailedCurrentRef = useRef(false);
   const autoNextTimerRef = useRef<number | null>(null);
+  const initialPresetRef = useRef<VocabQuickPreset | null>(initialPreset);
+  const onPresetConsumedRef = useRef(onPresetConsumed);
+  onPresetConsumedRef.current = onPresetConsumed;
   const speechSupported = useMemo(() => isSpeechSupported(), []);
 
   const clearAutoNextTimer = useCallback(() => {
@@ -208,9 +229,22 @@ export default function VocabPage() {
         if (!active) return;
         setVocabList(list);
         setProgressMap(progress);
-        const tierList = list.slice(0, 800);
+        const preset = initialPresetRef.current;
+        const targetTier = preset?.tier ?? 800;
+        const targetLimit = preset?.batchSize ?? 20;
+        const targetLabel = preset?.label ?? null;
+        const tierList = list.slice(0, targetTier);
         const initialItems = buildFilteredItems(tierList, progress, 'unmastered');
-        startSessionWithItems(initialItems.length > 0 ? initialItems : tierList, false, null, 20);
+        startSessionWithItems(
+          initialItems.length > 0 ? initialItems : tierList,
+          false,
+          targetLabel,
+          targetLimit,
+        );
+        if (preset) {
+          initialPresetRef.current = null;
+          onPresetConsumedRef.current?.();
+        }
       } finally {
         if (active) setLoading(false);
       }
